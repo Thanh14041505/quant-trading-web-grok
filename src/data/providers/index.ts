@@ -137,6 +137,14 @@ export const AVAILABLE_PROVIDERS: {
     requiresBaseUrl: true,
   },
   {
+    id: "vnstock",
+    name: "VNStock (Vercel API)",
+    description:
+      "Real VN data via Python vnstock on Vercel /api. No API key. Use after deploy.",
+    requiresApiKey: false,
+    requiresBaseUrl: false,
+  },
+  {
     id: "itick",
     name: "iTick (VN)",
     description:
