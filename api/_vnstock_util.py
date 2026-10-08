@@ -1,5 +1,22 @@
-"""Shared helpers for Vercel Python functions (vnstock v4 from GitHub)."""
+"""Shared helpers for Vercel Python functions (vnstock)."""
 from __future__ import annotations
+
+import os
+
+# Vercel filesystem is read-only except /tmp — vnstock/vnai write cache under HOME
+os.environ.setdefault("HOME", "/tmp")
+os.environ.setdefault("XDG_CACHE_HOME", "/tmp/.cache")
+os.environ.setdefault("XDG_CONFIG_HOME", "/tmp/.config")
+os.environ.setdefault("TMPDIR", "/tmp")
+os.environ.setdefault("TEMP", "/tmp")
+os.environ.setdefault("TMP", "/tmp")
+
+# Ensure dirs exist
+for d in ("/tmp/.cache", "/tmp/.config", "/tmp/vnstock"):
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
 
 from datetime import datetime, timedelta
 from typing import Any
@@ -94,32 +111,8 @@ def fetch_history(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
     symbol = normalize_symbol(symbol)
     errors: list[str] = []
 
-    # --- vnstock v4 style ---
-    try:
-        from vnstock import Vnstock
-
-        stock = Vnstock().stock(symbol=symbol, source="VCI")
-        df = stock.quote.history(start=start, end=end, interval="1D")
-        rows = dataframe_to_bars(df, symbol)
-        if rows:
-            return rows
-        errors.append("Vnstock.VCI empty")
-    except Exception as e:
-        errors.append(f"Vnstock.VCI: {e}")
-
-    try:
-        from vnstock import Quote
-
-        q = Quote(symbol=symbol, source="VCI")
-        df = q.history(start=start, end=end, interval="1D")
-        rows = dataframe_to_bars(df, symbol)
-        if rows:
-            return rows
-        errors.append("Quote.VCI empty")
-    except Exception as e:
-        errors.append(f"Quote.VCI: {e}")
-
-    for source in ("TCBS", "VND"):
+    # vnstock v4 supported sources on this build: KBS, VCI, MSN, FMP
+    for source in ("VCI", "KBS", "MSN"):
         try:
             from vnstock import Vnstock
 
@@ -132,18 +125,18 @@ def fetch_history(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
         except Exception as e:
             errors.append(f"Vnstock.{source}: {e}")
 
-    # --- older vnstock function style ---
-    try:
-        from vnstock import stock_historical_data
+        try:
+            from vnstock import Quote
 
-        df = stock_historical_data(symbol, start, end, "1D")
-        rows = dataframe_to_bars(df, symbol)
-        if rows:
-            return rows
-        errors.append("stock_historical_data empty")
-    except Exception as e:
-        errors.append(f"stock_historical_data: {e}")
+            q = Quote(symbol=symbol, source=source)
+            df = q.history(start=start, end=end, interval="1D")
+            rows = dataframe_to_bars(df, symbol)
+            if rows:
+                return rows
+            errors.append(f"Quote.{source} empty")
+        except Exception as e:
+            errors.append(f"Quote.{source}: {e}")
 
     raise RuntimeError(
-        f"vnstock failed for {symbol}. Tried: " + " | ".join(errors[:6])
+        f"vnstock failed for {symbol}. Tried: " + " | ".join(errors[:8])
     )
