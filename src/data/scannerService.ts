@@ -110,23 +110,34 @@ async function loadSeriesMap(
 
   for (let i = 0; i < symbols.length; i++) {
     const sym = symbols[i]
-    try {
-      const res = await fetchHistoricalPrices(sym, start, end)
-      if (res.data.length >= 30) {
-        seriesMap.set(sym, res.data)
-        if (res.fromCache) cached++
-        else fresh++
-      } else {
-        failed++
-        errors.push({ symbol: sym, error: "INSUFFICIENT_HISTORY" })
+    let ok = false
+    let lastErr = ""
+    // Retry up to 3 times — Vercel / upstream often flakes under load
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 800 * attempt))
+        }
+        const res = await fetchHistoricalPrices(sym, start, end)
+        if (res.data.length >= 30) {
+          seriesMap.set(sym, res.data)
+          if (res.fromCache) cached++
+          else fresh++
+          ok = true
+          break
+        }
+        lastErr = "INSUFFICIENT_HISTORY"
+        break
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : "DATA_ERROR"
       }
-    } catch (e) {
-      failed++
-      errors.push({
-        symbol: sym,
-        error: e instanceof Error ? e.message : "DATA_ERROR",
-      })
     }
+    if (!ok) {
+      failed++
+      errors.push({ symbol: sym, error: lastErr })
+    }
+    // Small gap to avoid slamming Vercel Python concurrency
+    await new Promise((r) => setTimeout(r, 150))
     onProgress({
       phase: "loading",
       done: i + 1,
