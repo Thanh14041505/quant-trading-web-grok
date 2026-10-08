@@ -1,5 +1,4 @@
 import type { OHLCV } from "@/models/market"
-import { lastNonNull } from "./math"
 
 export interface IchimokuFeatures {
   tenkan: number | null

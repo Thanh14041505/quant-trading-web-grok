@@ -90,7 +90,6 @@ function computeADX(bars: OHLCV[], period = 14) {
     let adxVal = 0
     for (let i = 0; i < period; i++) adxVal += dxArr[i]
     adxVal /= period
-    const startIdx = period + period - 1 // rough alignment
     // Align: first ADX at index period + period - 1
     let dxIdx = period - 1
     for (let i = period; i < n; i++) {

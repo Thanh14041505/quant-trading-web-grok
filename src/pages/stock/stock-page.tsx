@@ -8,7 +8,6 @@ import {
   CardDescription,
 } from "@/components/common/card"
 import { Badge } from "@/components/common/badge"
-import { Button } from "@/components/common/button"
 import { PriceChart, type ChartMarker } from "@/components/charts/price-chart"
 import {
   useHistoricalPrices,

@@ -3,7 +3,6 @@ import { MockMarketDataProvider } from "./mockProvider"
 import { HttpMarketDataProvider } from "./httpProvider"
 import { ItickMarketDataProvider } from "./itickProvider"
 import { VnstockMarketDataProvider } from "./vnstockProvider"
-import { DataProviderError } from "./errors"
 
 const STORAGE_KEY = "vnquant_api_key"
 const PROVIDER_ID_KEY = "vnquant_provider_id"

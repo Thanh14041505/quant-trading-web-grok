@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useMemo } from "react"
 import type { OHLCV } from "@/models/market"
 import { emaSeries } from "@/indicators/trend"
 import { cn } from "@/lib/utils"
@@ -128,8 +128,6 @@ export function PriceChart({
     xLabels.push({ i: n - 1, date: sorted[n - 1].date.slice(5) })
   }
 
-  const dateToIndex = new Map(sorted.map((b, i) => [b.date, i]))
-
   return (
     <div className={cn("w-full overflow-x-auto", className)}>
       <svg
@@ -197,7 +195,6 @@ export function PriceChart({
 
         {/* Markers (entry / SL / TP) */}
         {markers.map((m) => {
-          const i = dateToIndex.get(m.date) ?? n - 1
           const y = yAt(m.price)
           return (
             <g key={`${m.label}-${m.price}`}>

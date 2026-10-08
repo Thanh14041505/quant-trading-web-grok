@@ -63,8 +63,6 @@ function detectBreakout(
   // Near/above 20D high with volume expansion
   const nearHigh = rp20 >= 0.92
   const volOk = rvol >= 1.3
-  const trendOk = trend.aboveEma50 || trend.aboveEma20
-
   if (!nearHigh || !volOk) return null
 
   const reasons: string[] = ["BREAKOUT_RANGE_20"]
