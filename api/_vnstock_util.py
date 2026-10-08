@@ -1,4 +1,4 @@
-"""Shared helpers for Vercel Python functions (vnstock)."""
+"""Shared helpers for Vercel Python functions (vnstock v4 from GitHub)."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -15,7 +15,6 @@ def default_end() -> str:
 
 def normalize_symbol(symbol: str) -> str:
     s = (symbol or "").strip().upper()
-    # Common index aliases
     aliases = {
         "VNINDEX": "VNINDEX",
         "VN-INDEX": "VNINDEX",
@@ -31,7 +30,6 @@ def dataframe_to_bars(df, symbol: str) -> list[dict[str, Any]]:
     if df is None or getattr(df, "empty", True):
         return []
 
-    # Flatten multiindex columns if any
     if hasattr(df.columns, "levels"):
         try:
             df = df.copy()
@@ -48,7 +46,7 @@ def dataframe_to_bars(df, symbol: str) -> list[dict[str, Any]]:
             if n in cols:
                 return cols[n]
             for k, v in cols.items():
-                if n in k:
+                if n == k or n in k:
                     return v
         return None
 
@@ -60,9 +58,7 @@ def dataframe_to_bars(df, symbol: str) -> list[dict[str, Any]]:
     c_v = pick("volume")
 
     if not all([c_date, c_o, c_h, c_l, c_c]):
-        raise ValueError(
-            f"Unexpected columns for {symbol}: {list(df.columns)}"
-        )
+        raise ValueError(f"Unexpected columns for {symbol}: {list(df.columns)}")
 
     rows: list[dict[str, Any]] = []
     for _, r in df.iterrows():
@@ -72,14 +68,11 @@ def dataframe_to_bars(df, symbol: str) -> list[dict[str, Any]]:
         else:
             ds = str(d)[:10]
         try:
-            o = float(r[c_o])
-            h = float(r[c_h])
-            l = float(r[c_l])
-            c = float(r[c_c])
+            o, h, l, c = float(r[c_o]), float(r[c_h]), float(r[c_l]), float(r[c_c])
             v = float(r[c_v]) if c_v is not None else 0.0
         except Exception:
             continue
-        if o <= 0 or h <= 0 or l <= 0 or c <= 0:
+        if min(o, h, l, c) <= 0:
             continue
         rows.append(
             {
@@ -98,14 +91,10 @@ def dataframe_to_bars(df, symbol: str) -> list[dict[str, Any]]:
 
 
 def fetch_history(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
-    """
-    Fetch daily OHLCV via vnstock with several API variants
-    (library versions differ).
-    """
     symbol = normalize_symbol(symbol)
     errors: list[str] = []
 
-    # Variant 1: Vnstock().stock(...).quote.history
+    # --- vnstock v4 style ---
     try:
         from vnstock import Vnstock
 
@@ -114,11 +103,10 @@ def fetch_history(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
         rows = dataframe_to_bars(df, symbol)
         if rows:
             return rows
-        errors.append("VCI history empty")
+        errors.append("Vnstock.VCI empty")
     except Exception as e:
-        errors.append(f"VCI: {e}")
+        errors.append(f"Vnstock.VCI: {e}")
 
-    # Variant 2: Quote class
     try:
         from vnstock import Quote
 
@@ -127,23 +115,35 @@ def fetch_history(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
         rows = dataframe_to_bars(df, symbol)
         if rows:
             return rows
-        errors.append("Quote VCI empty")
+        errors.append("Quote.VCI empty")
     except Exception as e:
-        errors.append(f"Quote: {e}")
+        errors.append(f"Quote.VCI: {e}")
 
-    # Variant 3: TCBS source
+    for source in ("TCBS", "VND"):
+        try:
+            from vnstock import Vnstock
+
+            stock = Vnstock().stock(symbol=symbol, source=source)
+            df = stock.quote.history(start=start, end=end, interval="1D")
+            rows = dataframe_to_bars(df, symbol)
+            if rows:
+                return rows
+            errors.append(f"Vnstock.{source} empty")
+        except Exception as e:
+            errors.append(f"Vnstock.{source}: {e}")
+
+    # --- older vnstock function style ---
     try:
-        from vnstock import Vnstock
+        from vnstock import stock_historical_data
 
-        stock = Vnstock().stock(symbol=symbol, source="TCBS")
-        df = stock.quote.history(start=start, end=end, interval="1D")
+        df = stock_historical_data(symbol, start, end, "1D")
         rows = dataframe_to_bars(df, symbol)
         if rows:
             return rows
-        errors.append("TCBS empty")
+        errors.append("stock_historical_data empty")
     except Exception as e:
-        errors.append(f"TCBS: {e}")
+        errors.append(f"stock_historical_data: {e}")
 
     raise RuntimeError(
-        f"vnstock failed for {symbol}. Tried: " + " | ".join(errors[:4])
+        f"vnstock failed for {symbol}. Tried: " + " | ".join(errors[:6])
     )
