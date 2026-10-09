@@ -39,7 +39,7 @@ from _vnstock_util import (  # noqa: E402
     normalize_symbol,
 )
 
-MAX_SYMBOLS = 15
+MAX_SYMBOLS = 8
 DEFAULT_DELAY = 0.3
 
 

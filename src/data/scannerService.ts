@@ -108,7 +108,8 @@ async function loadSeriesMap(
 }> {
   // vnstock on Vercel: batch via POST /api/scan (one process, delay 0.3, chunks)
   if (shouldUseScanApi()) {
-    const { seriesMap, errors, fresh, failed } = await loadSeriesViaScanApi(
+    // Do NOT close over destructured const before assignment (TDZ crash)
+    const loaded = await loadSeriesViaScanApi(
       symbols,
       start,
       end,
@@ -118,18 +119,24 @@ async function loadSeriesMap(
           done,
           total,
           cached: 0,
-          fresh,
-          failed,
+          fresh: 0,
+          failed: 0,
           message,
         })
     )
-    // Drop short series from map for engine quality
+    const seriesMap = loaded.seriesMap
     for (const [sym, bars] of [...seriesMap.entries()]) {
       if (bars.length < 30) {
         seriesMap.delete(sym)
       }
     }
-    return { seriesMap, cached: 0, fresh, failed, errors }
+    return {
+      seriesMap,
+      cached: 0,
+      fresh: loaded.fresh,
+      failed: loaded.failed,
+      errors: loaded.errors,
+    }
   }
 
   const seriesMap = new Map<string, OHLCV[]>()
