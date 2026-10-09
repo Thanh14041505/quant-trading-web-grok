@@ -6,6 +6,7 @@ import { adaptBars } from "@/data/adapters/ohlcvAdapter"
 import { validateOHLCV } from "@/data/validation/ohlcv"
 import { getApiKey, getBaseUrl, getDataProvider } from "@/data/providers"
 import { getOrFetch } from "@/data/cache"
+import { adaptBars, type RawBar } from "@/data/adapters/ohlcvAdapter"
 
 /** Server hard-cap in api/scan.py */
 export const SCAN_CHUNK_SIZE = 12
@@ -83,7 +84,7 @@ export async function fetchScanChunk(
   const data = body.data ?? {}
   for (const [sym, raw] of Object.entries(data)) {
     if (!Array.isArray(raw)) continue
-    const adapted = adaptBars(raw, sym)
+    const adapted = adaptBars(raw as RawBar[], sym)
     const { valid, cleaned } = validateOHLCV(adapted, { minBars: 1 })
     if (valid && cleaned.length >= 30) {
       seriesMap.set(sym.toUpperCase(), cleaned)
