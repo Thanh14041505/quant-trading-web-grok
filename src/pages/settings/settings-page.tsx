@@ -263,7 +263,7 @@ export function SettingsPage() {
             </div>
           )}
 
-          {(selectedMeta?.requiresApiKey || providerId === "http") && (
+          {(selectedMeta?.requiresApiKey || providerId === "http" || providerId === "vnstock") && (
             <div className="space-y-2">
               <label htmlFor="api-key" className="text-sm font-medium">
                 API Key / Token
@@ -271,7 +271,7 @@ export function SettingsPage() {
               <Input
                 id="api-key"
                 type="password"
-                placeholder="Enter API key or token"
+                placeholder={providerId === "vnstock" ? "vnstock_xxxxxxxx (optional)" : "Enter API key or token"}
                 value={apiKey}
                 onChange={(e) => setApiKeyInput(e.target.value)}
                 autoComplete="off"

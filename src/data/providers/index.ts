@@ -91,7 +91,7 @@ export function restoreProvider(): MarketDataProvider {
 
   // vnstock needs no key; http may work with baseUrl only
   if (id === "vnstock") {
-    return activateProvider({ id: "vnstock", baseUrl })
+    return activateProvider({ id: "vnstock", baseUrl, apiKey })
   }
 
   if (id === "http") {
@@ -135,14 +135,6 @@ export const AVAILABLE_PROVIDERS: {
       "Point to any CORS-enabled JSON API that follows the expected OHLCV shape.",
     requiresApiKey: false,
     requiresBaseUrl: true,
-  },
-  {
-    id: "vnstock",
-    name: "VNStock (Vercel API)",
-    description:
-      "Real VN data via Python vnstock on Vercel /api. No API key. Use after deploy.",
-    requiresApiKey: false,
-    requiresBaseUrl: false,
   },
   {
     id: "itick",

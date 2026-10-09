@@ -16,6 +16,10 @@ import {
   toHoldFundamentals,
 } from "@/quant/strategies"
 import { resolveUniverse, type UniverseConfig } from "@/config/universe"
+import {
+  loadSeriesViaScanApi,
+  shouldUseScanApi,
+} from "@/data/scanBatch"
 
 export type ScannerKind = "tplus" | "hold"
 
@@ -102,6 +106,32 @@ async function loadSeriesMap(
   failed: number
   errors: { symbol: string; error: string }[]
 }> {
+  // vnstock on Vercel: batch via POST /api/scan (one process, delay 0.3, chunks)
+  if (shouldUseScanApi()) {
+    const { seriesMap, errors, fresh, failed } = await loadSeriesViaScanApi(
+      symbols,
+      start,
+      end,
+      (done, total, message) =>
+        onProgress({
+          phase: "loading",
+          done,
+          total,
+          cached: 0,
+          fresh,
+          failed,
+          message,
+        })
+    )
+    // Drop short series from map for engine quality
+    for (const [sym, bars] of [...seriesMap.entries()]) {
+      if (bars.length < 30) {
+        seriesMap.delete(sym)
+      }
+    }
+    return { seriesMap, cached: 0, fresh, failed, errors }
+  }
+
   const seriesMap = new Map<string, OHLCV[]>()
   const errors: { symbol: string; error: string }[] = []
   let cached = 0
@@ -109,10 +139,9 @@ async function loadSeriesMap(
   let failed = 0
 
   for (let i = 0; i < symbols.length; i++) {
-    const sym = symbols[i]
+    const sym = symbols[i]!
     let ok = false
     let lastErr = ""
-    // Retry up to 3 times — Vercel / upstream often flakes under load
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         if (attempt > 0) {
@@ -136,7 +165,6 @@ async function loadSeriesMap(
       failed++
       errors.push({ symbol: sym, error: lastErr })
     }
-    // Small gap to avoid slamming Vercel Python concurrency
     await new Promise((r) => setTimeout(r, 150))
     onProgress({
       phase: "loading",
@@ -304,30 +332,79 @@ export async function runHoldScanner(
   let fresh = 0
   let failed = 0
 
+  // Prices via /api/scan chunks when vnstock; else sequential single-symbol
+  if (shouldUseScanApi()) {
+    const loaded = await loadSeriesViaScanApi(
+      symbols,
+      start,
+      end,
+      (done, total, message) =>
+        progress({
+          phase: "loading",
+          done,
+          total,
+          cached: 0,
+          fresh,
+          failed,
+          message: message ? `Prices: ${message}` : undefined,
+        })
+    )
+    for (const [sym, bars] of loaded.seriesMap) {
+      if (bars.length >= 30) seriesMap.set(sym, bars)
+    }
+    fresh = loaded.fresh
+    failed = loaded.failed
+    errors.push(...loaded.errors)
+  }
+
   for (let i = 0; i < symbols.length; i++) {
-    const sym = symbols[i]
+    const sym = symbols[i]!
+    // Skip fund fetch if no price series (unless not using scan api path for prices)
+    if (shouldUseScanApi() && !seriesMap.has(sym)) {
+      progress({
+        phase: "loading",
+        done: i + 1,
+        total: symbols.length,
+        cached,
+        fresh,
+        failed,
+        message: `Skip fund ${sym}`,
+      })
+      continue
+    }
     try {
-      const [priceRes, fundRes, companyRes] = await Promise.all([
-        fetchHistoricalPrices(sym, start, end),
+      if (!shouldUseScanApi()) {
+        const priceRes = await fetchHistoricalPrices(sym, start, end)
+        if (priceRes.data.length >= 30) {
+          seriesMap.set(sym, priceRes.data)
+          if (priceRes.fromCache) cached++
+          else fresh++
+        } else {
+          failed++
+          errors.push({ symbol: sym, error: "INSUFFICIENT_HISTORY" })
+          progress({
+            phase: "loading",
+            done: i + 1,
+            total: symbols.length,
+            cached,
+            fresh,
+            failed,
+          })
+          continue
+        }
+      }
+      const [fundRes, companyRes] = await Promise.all([
         fetchFundamentals(sym),
         fetchCompanyInfo(sym),
       ])
-      if (priceRes.data.length >= 30) {
-        seriesMap.set(sym, priceRes.data)
-        fundMap.set(
+      fundMap.set(
+        sym,
+        toHoldFundamentals(
           sym,
-          toHoldFundamentals(
-            sym,
-            fundRes.data as unknown as Record<string, unknown>,
-            companyRes.data.sector ?? companyRes.data.industry
-          )
+          fundRes.data as unknown as Record<string, unknown>,
+          companyRes.data.sector ?? companyRes.data.industry
         )
-        if (priceRes.fromCache) cached++
-        else fresh++
-      } else {
-        failed++
-        errors.push({ symbol: sym, error: "INSUFFICIENT_HISTORY" })
-      }
+      )
     } catch (e) {
       failed++
       errors.push({
