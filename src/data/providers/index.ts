@@ -137,6 +137,14 @@ export const AVAILABLE_PROVIDERS: {
     requiresBaseUrl: true,
   },
   {
+    id: "vnstock",
+    name: "VNStock (Vercel API)",
+    description:
+      "POST /api/scan chunks (sequential server-side). Optional API key for higher quota.",
+    requiresApiKey: false,
+    requiresBaseUrl: false,
+  },
+  {
     id: "itick",
     name: "iTick (VN)",
     description:
