@@ -2,11 +2,11 @@
  * Client helper: call POST /api/scan in chunks (Streamlit-style sequential server-side).
  */
 import type { OHLCV } from "@/models/market"
-import { adaptBars } from "@/data/adapters/ohlcvAdapter"
+import { adaptBars, type RawBar } from "@/data/adapters/ohlcvAdapter"
 import { validateOHLCV } from "@/data/validation/ohlcv"
 import { getApiKey, getBaseUrl, getDataProvider } from "@/data/providers"
 import { getOrFetch } from "@/data/cache"
-import { adaptBars, type RawBar } from "@/data/adapters/ohlcvAdapter"
+
 
 /** Server hard-cap in api/scan.py */
 export const SCAN_CHUNK_SIZE = 12
