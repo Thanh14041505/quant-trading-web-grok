@@ -52,7 +52,7 @@ export function runTPlusEngine(
   // Merge reasons/risks
   const reasons = [...breakdown.reasons]
   const risks = [...breakdown.risks]
-  if (riskPlan && riskPlan.riskReward < 1.3) {
+  if (riskPlan && riskPlan.riskReward < 1.8) {
     risks.push("LOW_REWARD_RISK")
   }
   if (riskPlan && riskPlan.riskReward >= 2) {
