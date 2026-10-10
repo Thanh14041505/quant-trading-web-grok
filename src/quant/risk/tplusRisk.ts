@@ -19,27 +19,21 @@ export interface RiskPlan {
   riskPerShare: number
 }
 
-/** Tunable T+ risk targets (aligned with VN Quant engine swing defaults) */
+/**
+ * SL: capped (agreed).
+ * TP: realistic structure + ATR — NEVER stretch TP just to force R:R >= 2.
+ * R:R is measured honestly; action layer filters poor R:R.
+ */
 export const TPLUS_RISK_DEFAULTS = {
-  /** Min R:R to TP1 after plan build */
-  minRrTp1: 2.0,
-  /** TP1 = entryMid + risk * mult (floor) */
-  t1RiskMult: 2.0,
-  /** TP2 = entryMid + risk * mult (floor) */
-  t2RiskMult: 3.5,
-  /** Cap SL distance from entry mid (ATR units) so structure SL cannot kill R:R */
   maxSlAtr: 1.8,
-  /** Floor SL distance so noise doesn't make tiny risk / crazy R:R */
   minSlAtr: 0.7,
-  /** Prefer at least this % gain to TP1 when ATR% is healthy (VN T+ style) */
-  minTp1Pct: 0.06,
-  /** Soft target % for TP2 */
-  minTp2Pct: 0.1,
+  /** Soft ATR guides when structure is missing / too close */
+  tp1AtrMult: 1.8,
+  tp2AtrMult: 3.0,
+  /** Min gap TP above entry high (ATR) so TP is not inside entry zone */
+  minTpClearAtr: 0.35,
 } as const
 
-/**
- * ATR (Wilder) for SL/TP sizing
- */
 export function atr(bars: OHLCV[], period = 14): number | null {
   if (bars.length < period + 1) return null
   const trs: number[] = []
@@ -62,13 +56,21 @@ function round2(n: number) {
   return Math.round(n * 100) / 100
 }
 
-/**
- * Build entry / SL / TP with R-multiple targets.
- *
- * Old bug: SL from deep structure + TP = entry + 1.2 ATR → R:R ≈ 1.0–1.1.
- * Fix: cap SL depth, size TP1/TP2 as multiples of risk (2R / 3.5R),
- * optionally lift to structure highs / min % targets when higher.
- */
+function pickNearestResistanceAbove(
+  level: number,
+  candidates: (number | null | undefined)[],
+  atr14: number
+): number | null {
+  const min = level + 0.15 * atr14
+  let best: number | null = null
+  for (const c of candidates) {
+    if (c == null || !Number.isFinite(c)) continue
+    if (c < min) continue
+    if (best == null || c < best) best = c
+  }
+  return best
+}
+
 export function buildRiskPlan(
   features: FeatureSnapshot,
   bars: OHLCV[],
@@ -81,8 +83,10 @@ export function buildRiskPlan(
   const cfg = TPLUS_RISK_DEFAULTS
   const structLow =
     features.structure.low20 ?? features.structure.low50 ?? close - 2 * atr14
-  const structHigh20 = features.structure.high20
-  const structHigh50 = features.structure.high50
+  const high20 = features.structure.high20
+  const high50 = features.structure.high50
+  const ema20 = features.trend.ema20
+  const ema50 = features.trend.ema50
 
   let entryLow: number
   let entryHigh: number
@@ -91,11 +95,10 @@ export function buildRiskPlan(
 
   switch (setup) {
     case "BREAKOUT": {
-      const res = structHigh20 ?? close
+      const res = high20 ?? close
       entryLow = res
       entryHigh = res + 0.35 * atr14
       trigger = "breakout + RVOL confirmation"
-      // Invalidation just under breakout base / recent swing — not entire 20d range
       rawSl = Math.min(
         res - 0.9 * atr14,
         (features.structure.low20 ?? res) - 0.15 * atr14
@@ -103,9 +106,9 @@ export function buildRiskPlan(
       break
     }
     case "PULLBACK": {
-      const ema20 = features.trend.ema20 ?? close
-      entryLow = Math.min(ema20, close) - 0.25 * atr14
-      entryHigh = Math.max(ema20, close) + 0.12 * atr14
+      const e = ema20 ?? close
+      entryLow = Math.min(e, close) - 0.25 * atr14
+      entryHigh = Math.max(e, close) + 0.12 * atr14
       trigger = "bullish reversal above support / EMA20"
       rawSl = Math.min(entryLow - 0.7 * atr14, structLow - 0.1 * atr14)
       break
@@ -115,9 +118,7 @@ export function buildRiskPlan(
       entryHigh = close + 0.2 * atr14
       trigger = "hold above EMA20 with positive MACD hist"
       rawSl = close - 1.2 * atr14
-      if (features.trend.ema20 != null) {
-        rawSl = Math.min(rawSl, features.trend.ema20 - 0.4 * atr14)
-      }
+      if (ema20 != null) rawSl = Math.min(rawSl, ema20 - 0.4 * atr14)
       break
     }
     case "RSI_DIVERGENCE_REVERSAL":
@@ -146,18 +147,17 @@ export function buildRiskPlan(
 
   const entryMid = (entryLow + entryHigh) / 2
 
-  // --- Cap SL depth so risk stays tradeable ---
+  // ----- SL cap (kept — user agreed) -----
   const maxSlDist = cfg.maxSlAtr * atr14
   const minSlDist = cfg.minSlAtr * atr14
   let stopLoss = rawSl
-  if (stopLoss >= entryMid - minSlDist) {
-    stopLoss = entryMid - minSlDist
-  }
-  if (entryMid - stopLoss > maxSlDist) {
-    stopLoss = entryMid - maxSlDist
-  }
-  // Still keep a structural hint if it is tighter (better) than cap
-  if (rawSl < entryMid && entryMid - rawSl >= minSlDist && entryMid - rawSl <= maxSlDist) {
+  if (stopLoss >= entryMid - minSlDist) stopLoss = entryMid - minSlDist
+  if (entryMid - stopLoss > maxSlDist) stopLoss = entryMid - maxSlDist
+  if (
+    rawSl < entryMid &&
+    entryMid - rawSl >= minSlDist &&
+    entryMid - rawSl <= maxSlDist
+  ) {
     stopLoss = rawSl
   }
 
@@ -167,43 +167,49 @@ export function buildRiskPlan(
     riskPerShare = minSlDist
   }
 
-  // --- TP from risk multiples (primary) ---
-  let tp1 = entryMid + cfg.t1RiskMult * riskPerShare
-  let tp2 = entryMid + cfg.t2RiskMult * riskPerShare
+  // ----- TP: realistic only — no forced 2R stretch -----
+  // Priority:
+  //  1) Nearest structure resistance above entry (high20 / high50 / EMA if above)
+  //  2) Else ATR projection from entry (measured move style)
+  //  3) TP2 = next resistance or wider ATR — must stay above TP1
+  //
+  // We do NOT push TP higher just to make R:R look good.
 
-  // Min % floors (VN T+ often needs meaningful move)
-  tp1 = Math.max(tp1, entryMid * (1 + cfg.minTp1Pct))
-  tp2 = Math.max(tp2, entryMid * (1 + cfg.minTp2Pct), tp1 + 0.5 * atr14)
+  const atrTp1 = entryMid + cfg.tp1AtrMult * atr14
+  const atrTp2 = entryMid + cfg.tp2AtrMult * atr14
 
-  // Structure extension: if clear resistance is ABOVE min TP, use it for TP1/TP2
-  if (structHigh20 != null && structHigh20 > tp1) {
-    // Partial at first major high only if it still keeps R:R >= ~1.8
-    const rrAtHigh = (structHigh20 - entryMid) / riskPerShare
-    if (rrAtHigh >= 1.8) {
-      tp1 = structHigh20
-    }
+  const res1 = pickNearestResistanceAbove(entryHigh, [high20, ema50, ema20], atr14)
+  const res2 = pickNearestResistanceAbove(
+    entryHigh,
+    [high50, high20 != null ? high20 + atr14 : null],
+    atr14
+  )
+
+  let tp1: number
+  if (res1 != null && res1 > entryHigh + cfg.minTpClearAtr * atr14) {
+    // Structure target — honest ceiling of path of least resistance
+    tp1 = res1
+  } else {
+    // No clear overhead structure → ATR measured objective
+    tp1 = atrTp1
   }
-  if (structHigh50 != null && structHigh50 > tp2) {
-    tp2 = structHigh50
-  } else if (structHigh20 != null && structHigh20 > tp2) {
-    tp2 = structHigh20 + 0.5 * atr14
+
+  let tp2: number
+  if (res2 != null && res2 > tp1 + 0.25 * atr14) {
+    tp2 = res2
+  } else if (high50 != null && high50 > tp1 + 0.25 * atr14) {
+    tp2 = high50
+  } else {
+    tp2 = Math.max(atrTp2, tp1 + 1.0 * atr14)
   }
 
-  // Ensure ordering
-  if (tp1 <= entryHigh) tp1 = entryHigh + cfg.t1RiskMult * riskPerShare
-  if (tp2 <= tp1) tp2 = tp1 + (cfg.t2RiskMult - cfg.t1RiskMult) * riskPerShare
+  // Keep TP outside entry zone; do not invent far targets
+  if (tp1 <= entryHigh) tp1 = entryHigh + cfg.minTpClearAtr * atr14
+  if (tp2 <= tp1) tp2 = tp1 + 0.75 * atr14
 
-  // Final R:R to TP1; if still below target, stretch TP1 (keep SL fixed)
-  let reward = tp1 - entryMid
-  let riskReward = reward / riskPerShare
-  if (riskReward < cfg.minRrTp1) {
-    tp1 = entryMid + cfg.minRrTp1 * riskPerShare
-    reward = tp1 - entryMid
-    riskReward = cfg.minRrTp1
-    if (tp2 <= tp1) {
-      tp2 = entryMid + cfg.t2RiskMult * riskPerShare
-    }
-  }
+  // Honest R:R to TP1 (may be < 2 — that is intentional signal quality)
+  const reward = tp1 - entryMid
+  const riskReward = reward / riskPerShare
 
   return {
     entryZone: {
@@ -220,8 +226,8 @@ export function buildRiskPlan(
 }
 
 /**
- * Separate Opportunity Score vs Trade Quality vs Confidence.
- * High score + poor R:R → NO_TRADE / WAIT, not automatic BUY.
+ * Gate actions by measured R:R — do not assume TP is reachable at 2R.
+ * Poor geometry → WAIT / NO_TRADE even if score is high.
  */
 export function decideAction(
   score: number,
@@ -241,30 +247,30 @@ export function decideAction(
 
   let tradeQuality: TradeQuality = "LOW"
   if (rr >= 2.5 && setup.quality >= 65) tradeQuality = "HIGH"
-  else if (rr >= 2 && setup.quality >= 50) tradeQuality = "HIGH"
-  else if (rr >= 1.8 && setup.quality >= 45) tradeQuality = "MEDIUM"
-  else if (rr >= 1.5) tradeQuality = "MEDIUM"
+  else if (rr >= 2.0 && setup.quality >= 50) tradeQuality = "HIGH"
+  else if (rr >= 1.5 && setup.quality >= 45) tradeQuality = "MEDIUM"
+  else if (rr >= 1.2) tradeQuality = "MEDIUM"
 
   let confidence: ConfidenceLevel = "LOW"
   if (score >= 70 && setup.quality >= 65 && rr >= 2) confidence = "HIGH"
-  else if (score >= 55 && setup.quality >= 50 && rr >= 1.8) confidence = "MEDIUM"
+  else if (score >= 55 && setup.quality >= 50 && rr >= 1.5) confidence = "MEDIUM"
   else if (score >= 45) confidence = "MEDIUM"
 
   const regime = String(regimeName).toUpperCase()
   const bearish = regime.includes("BEAR") || regime.includes("PANIC")
 
-  // Action gates — require meaningful R:R for BUY
-  if (score >= 65 && rr >= 2 && setup.quality >= 55 && !bearish) {
+  // BUY only when geometry is actually good — not forced
+  if (score >= 65 && rr >= 2.0 && setup.quality >= 55 && !bearish) {
     return { action: "BUY", tradeQuality, confidence }
   }
-  if (score >= 55 && rr >= 1.8 && setup.quality >= 45) {
+  if (score >= 55 && rr >= 1.5 && setup.quality >= 45) {
     return { action: "WATCH", tradeQuality, confidence }
   }
-  if (score >= 45 && rr >= 1.5) {
+  if (score >= 45 && rr >= 1.2) {
     return { action: "WAIT", tradeQuality, confidence }
   }
-  // Strong setup but R:R still marginal after plan → WAIT not BUY
-  if (score >= 60 && rr < 1.8) {
+  // High opportunity score but bad path-to-target geometry
+  if (score >= 60 && rr < 1.5) {
     return { action: "WAIT", tradeQuality: "LOW", confidence: "LOW" }
   }
 
