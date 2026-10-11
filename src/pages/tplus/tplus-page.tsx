@@ -10,7 +10,7 @@ import {
 import { Badge } from "@/components/common/badge"
 import { Button } from "@/components/common/button"
 import { Input } from "@/components/common/input"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, Download } from "lucide-react"
 import {
   runTPlusScanner,
   loadCachedScan,
@@ -19,6 +19,7 @@ import {
 } from "@/data/scannerService"
 import type { TradingSignal } from "@/models/signal"
 import { resolveUniverse } from "@/config/universe"
+import { exportTPlusScanToExcel } from "@/utils/exportScanExcel"
 
 type SortKey =
   | "score"
@@ -55,6 +56,8 @@ export function TPlusPage() {
   const [search, setSearch] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("score")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [exporting, setExporting] = useState(false)
+  const [exportMsg, setExportMsg] = useState("")
 
   // Load cache on mount
   useEffect(() => {
@@ -84,6 +87,36 @@ export function TPlusPage() {
       setLoading(false)
     }
   }, [])
+
+  const exportExcel = useCallback(async () => {
+    if (!result?.signals?.length) return
+    setExporting(true)
+    setExportMsg("Preparing detailed export…")
+    try {
+      await exportTPlusScanToExcel(
+        // export filtered view if filters active, else all
+        result.signals,
+        {
+          asOf: result.asOf,
+          regime: result.regime,
+          universeSize: result.universeSize,
+          durationMs: result.durationMs,
+          errors: result.errors,
+        },
+        (p) =>
+          setExportMsg(
+            p.message
+              ? `${p.message} (${p.done}/${p.total})`
+              : `${p.done}/${p.total}`
+          )
+      )
+      setExportMsg("Downloaded .xls + .csv")
+    } catch (e) {
+      setExportMsg(e instanceof Error ? e.message : "Export failed")
+    } finally {
+      setExporting(false)
+    }
+  }, [result])
 
   const signals = result?.signals ?? []
 
@@ -143,8 +176,21 @@ export function TPlusPage() {
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Scanning…" : "Force Refresh"}
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={exporting || !result?.signals?.length}
+            onClick={() => void exportExcel()}
+          >
+            <Download className="h-4 w-4" />
+            {exporting ? "Exporting…" : "Export Excel"}
+          </Button>
         </div>
       </div>
+
+      {exportMsg && (
+        <p className="text-sm text-muted-foreground">{exportMsg}</p>
+      )}
 
       {loading && progress && (
         <Card>
