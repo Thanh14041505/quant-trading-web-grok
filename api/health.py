@@ -8,7 +8,7 @@ class handler(BaseHTTPRequestHandler):
             "ok": True,
             "service": "vn-quant-api",
             "provider": "vnstock",
-            "endpoints": ["/api/health", "/api/ohlcv", "/api/index"],
+            "endpoints": ["/api/health", "/api/ohlcv", "/api/index", "/api/scan", "/api/company", "/api/fundamentals"],
         }
         self._json(200, body)
 

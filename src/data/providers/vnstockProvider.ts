@@ -112,19 +112,73 @@ export class VnstockMarketDataProvider implements MarketDataProvider {
   }
 
   async getCompanyInfo(symbol: string): Promise<CompanyInfo> {
-    return {
-      symbol: symbol.toUpperCase(),
-      name: `${symbol.toUpperCase()} (VNStock)`,
-      exchange: "HOSE",
-      sector: "Unknown",
-      industry: "Unknown",
+    try {
+      const json = await this.fetchJson(
+        this.url("/api/company", { symbol: symbol.toUpperCase() })
+      )
+      const d = (json as { data?: Record<string, unknown> }).data ?? {}
+      const exchange = String(d.exchange ?? "HOSE").toUpperCase()
+      return {
+        symbol: symbol.toUpperCase(),
+        name: String(d.name ?? symbol.toUpperCase()),
+        exchange:
+          exchange === "HNX" || exchange === "UPCOM" || exchange === "HOSE"
+            ? exchange
+            : exchange.includes("HN")
+              ? "HNX"
+              : exchange.includes("UP")
+                ? "UPCOM"
+                : "HOSE",
+        sector: d.sector != null ? String(d.sector) : undefined,
+        industry: d.industry != null ? String(d.industry) : undefined,
+      }
+    } catch {
+      // Soft fallback so UI still renders
+      return {
+        symbol: symbol.toUpperCase(),
+        name: symbol.toUpperCase(),
+        exchange: "HOSE",
+        sector: "Other",
+        industry: "Other",
+      }
     }
   }
 
   async getFundamentals(symbol: string): Promise<FundamentalData> {
-    return {
-      symbol: symbol.toUpperCase(),
-      asOf: new Date().toISOString().slice(0, 10),
+    try {
+      const json = await this.fetchJson(
+        this.url("/api/fundamentals", { symbol: symbol.toUpperCase() })
+      )
+      const d = (json as { data?: Record<string, unknown> }).data ?? {}
+      const num = (k: string): number | undefined => {
+        const v = d[k]
+        if (v == null || v === "") return undefined
+        const n = Number(v)
+        return Number.isFinite(n) ? n : undefined
+      }
+      return {
+        symbol: symbol.toUpperCase(),
+        asOf: String(d.asOf ?? new Date().toISOString().slice(0, 10)),
+        roe: num("roe"),
+        roa: num("roa"),
+        pe: num("pe"),
+        pb: num("pb"),
+        eps: num("eps"),
+        revenueGrowth: num("revenueGrowth"),
+        epsGrowth: num("epsGrowth"),
+        debtToEquity: num("debtToEquity"),
+        // extras for Hold / export
+        profitGrowth: num("profitGrowth"),
+        sector: d.sector != null ? String(d.sector) : undefined,
+        industry: d.industry != null ? String(d.industry) : undefined,
+        name: d.name != null ? String(d.name) : undefined,
+        source: d.source != null ? String(d.source) : undefined,
+      }
+    } catch {
+      return {
+        symbol: symbol.toUpperCase(),
+        asOf: new Date().toISOString().slice(0, 10),
+      }
     }
   }
 
