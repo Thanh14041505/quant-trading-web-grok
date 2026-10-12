@@ -1,5 +1,6 @@
 from http.server import BaseHTTPRequestHandler
 import json
+import os
 
 
 class handler(BaseHTTPRequestHandler):
@@ -8,7 +9,17 @@ class handler(BaseHTTPRequestHandler):
             "ok": True,
             "service": "vn-quant-api",
             "provider": "vnstock",
-            "endpoints": ["/api/health", "/api/ohlcv", "/api/index", "/api/scan", "/api/company", "/api/fundamentals"],
+            "vnstock_key_configured": bool(os.getenv("VNSTOCK_API_KEY")),
+            "endpoints": [
+                "/api/health",
+                "/api/ohlcv",
+                "/api/index",
+                "/api/scan",
+                "/api/company",
+                "/api/fundamentals",
+                "/api/sectors",
+            ],
+            "note": "Health confirms function availability. Test /api/fundamentals?symbol=FPT for upstream ratios.",
         }
         self._json(200, body)
 
@@ -20,7 +31,7 @@ class handler(BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-VNSTOCK-KEY")
 
     def _json(self, status: int, body: dict):
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")

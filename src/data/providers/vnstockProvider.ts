@@ -158,21 +158,47 @@ export class VnstockMarketDataProvider implements MarketDataProvider {
       }
       return {
         symbol: symbol.toUpperCase(),
-        asOf: String(d.asOf ?? new Date().toISOString().slice(0, 10)),
+        asOf: String(
+          d.latestPeriod ?? d.asOf ?? new Date().toISOString().slice(0, 10)
+        ),
         roe: num("roe"),
         roa: num("roa"),
+        roic: num("roic"),
         pe: num("pe"),
         pb: num("pb"),
         eps: num("eps"),
         revenueGrowth: num("revenueGrowth"),
         epsGrowth: num("epsGrowth"),
         debtToEquity: num("debtToEquity"),
-        // extras for Hold / export
-        profitGrowth: num("profitGrowth"),
+        profitGrowth: num("profitGrowth") ?? num("profitCagr"),
+        grossMargin: num("grossMargin"),
+        operatingMargin: num("operatingMargin"),
+        netMargin: num("netMargin"),
+        operatingCashFlow: num("operatingCashFlow"),
+        freeCashFlow: num("freeCashFlow"),
+        interestCoverage: num("interestCoverage"),
+        evEbitda: num("evEbitda"),
+        peg: num("peg"),
+        dividendYield: num("dividendYield"),
+        historicalPe: num("historicalPe"),
+        historicalPb: num("historicalPb"),
+        revenueCagr: num("revenueCagr"),
+        profitCagr: num("profitCagr"),
+        netDebt: num("netDebt"),
+        inventory: num("inventory"),
+        npl: num("npl"),
+        nim: num("nim"),
+        provisioning: num("provisioning"),
+        casa: num("casa"),
+        dataAvailable: d.dataAvailable === true || d.dataAvailable === false
+          ? Boolean(d.dataAvailable)
+          : undefined,
+        latestPeriod:
+          d.latestPeriod != null ? String(d.latestPeriod) : undefined,
+        source: d.source != null ? String(d.source) : undefined,
         sector: d.sector != null ? String(d.sector) : undefined,
         industry: d.industry != null ? String(d.industry) : undefined,
         name: d.name != null ? String(d.name) : undefined,
-        source: d.source != null ? String(d.source) : undefined,
       }
     } catch {
       return {
