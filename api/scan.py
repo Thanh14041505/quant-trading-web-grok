@@ -32,15 +32,28 @@ for d in ("/tmp/.cache", "/tmp/.config", "/tmp/vnstock"):
     except Exception:
         pass
 
-from _vnstock_util import (  # noqa: E402
+from _vndirect_util import (  # noqa: E402
     default_end,
     default_start,
-    fetch_history,
     normalize_symbol,
+    fetch_history as vnd_fetch_history,
 )
 
+def fetch_history(symbol: str, start: str, end: str):
+    """Prefer VNDirect (fast, no guest quota); fallback vnstock if needed."""
+    try:
+        return vnd_fetch_history(symbol, start, end)
+    except Exception as vnd_err:
+        try:
+            from _vnstock_util import fetch_history as vs_fetch
+            return vs_fetch(symbol, start, end)
+        except Exception as vs_err:
+            raise RuntimeError(
+                f"history failed VND={vnd_err}; VS={vs_err}"
+            ) from vs_err
+
 MAX_SYMBOLS = 8
-DEFAULT_DELAY = 0.3
+DEFAULT_DELAY = 0.2
 
 
 def _register_key(api_key: str | None) -> str:

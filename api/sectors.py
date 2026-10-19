@@ -6,16 +6,13 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 import _env_setup  # noqa: F401, E402
-from _vnstock_util import configure_vnstock_key, fetch_sector_universe, key_from_request  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            query = parse_qs(urlparse(self.path).query)
-            force = (query.get("refresh") or [""])[0].strip().lower() in ("1", "true", "yes")
-            configure_vnstock_key(key_from_request(self))
-            body = fetch_sector_universe(force_refresh=force)
+            from _vndirect_util import fetch_sector_universe
+            body = fetch_sector_universe()
             payload = json.dumps(body, ensure_ascii=False, default=str).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -25,16 +22,30 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
         except Exception as error:
-            payload = json.dumps({
-                "error": str(error)[:320],
-                "code": "VNSTOCK_SECTOR_UNIVERSE_ERROR",
-            }).encode("utf-8")
-            self.send_response(502)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
+            # fallback vnstock map
+            try:
+                from _vnstock_util import configure_vnstock_key, fetch_sector_universe as vs_sectors, key_from_request
+                configure_vnstock_key(key_from_request(self))
+                body = vs_sectors(force_refresh=False)
+                payload = json.dumps(body, ensure_ascii=False, default=str).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except Exception as e2:
+                payload = json.dumps({
+                    "error": str(e2)[:320],
+                    "code": "SECTOR_UNIVERSE_ERROR",
+                    "vndirect": str(error)[:160],
+                }).encode("utf-8")
+                self.send_response(502)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
 
     def do_OPTIONS(self):
         self.send_response(204)

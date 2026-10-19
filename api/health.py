@@ -8,7 +8,8 @@ class handler(BaseHTTPRequestHandler):
         body = {
             "ok": True,
             "service": "vn-quant-api",
-            "provider": "vnstock",
+            "primary_provider": "vndirect-finfo",
+            "fallback_provider": "vnstock",
             "vnstock_key_configured": bool(os.getenv("VNSTOCK_API_KEY")),
             "endpoints": [
                 "/api/health",
@@ -19,7 +20,10 @@ class handler(BaseHTTPRequestHandler):
                 "/api/fundamentals",
                 "/api/sectors",
             ],
-            "note": "Health confirms function availability. Test /api/fundamentals?symbol=FPT for upstream ratios.",
+            "note": (
+                "OHLCV/company prefer VNDirect finfo-api (no guest rate limit). "
+                "Fundamentals: VNDirect first, optional vnstock enrich."
+            ),
         }
         self._json(200, body)
 
@@ -31,7 +35,10 @@ class handler(BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-VNSTOCK-KEY")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, X-VNSTOCK-KEY",
+        )
 
     def _json(self, status: int, body: dict):
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")

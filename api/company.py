@@ -1,3 +1,4 @@
+"""GET /api/company?symbol= — VNDirect first, soft fallback."""
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import json
@@ -7,19 +8,41 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 import _env_setup  # noqa: F401, E402
-from _vnstock_util import fetch_company, configure_vnstock_key, key_from_request  # noqa: E402
+from _vndirect_util import fetch_company as vnd_company  # noqa: E402
+from _rate_limit import soft_company  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        qs = parse_qs(urlparse(self.path).query)
+        symbol = (qs.get("symbol") or ["VCB"])[0]
         try:
-            qs = parse_qs(urlparse(self.path).query)
-            symbol = (qs.get("symbol") or ["VCB"])[0]
-            configure_vnstock_key(key_from_request(self))
-            data = fetch_company(symbol)
-            self._json(200, {"data": data, "symbol": symbol.upper(), "source": data.get("source", "vnstock")})
+            data = vnd_company(symbol)
+            # optional enrich via vnstock only if sector still generic
+            if data.get("sector") in (None, "Other", "Unknown") and data.get("dataAvailable") is False:
+                try:
+                    from _vnstock_util import fetch_company as vs_company, configure_vnstock_key, key_from_request
+                    configure_vnstock_key(key_from_request(self))
+                    vs = vs_company(symbol)
+                    if vs.get("sector") and vs.get("sector") != "Other":
+                        data = {**data, **{k: v for k, v in vs.items() if v is not None}}
+                        data["source"] = f"vndirect+{vs.get('source', 'vnstock')}"
+                except Exception:
+                    pass
+            self._json(200, {"data": data, "symbol": symbol.upper(), "source": data.get("source", "vndirect")})
         except Exception as e:
-            self._json(500, {"error": str(e)[:400], "trace": traceback.format_exc()[-800:]})
+            soft = soft_company(symbol, e)
+            self._json(
+                200,
+                {
+                    "data": soft,
+                    "symbol": symbol.upper(),
+                    "source": "soft-fallback",
+                    "error": soft.get("code"),
+                    "message": soft.get("message"),
+                    "trace": traceback.format_exc()[-400:],
+                },
+            )
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -38,7 +61,6 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self._cors()
-        self.send_header("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
