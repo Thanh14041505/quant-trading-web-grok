@@ -44,10 +44,6 @@ export interface TPlusScanResult {
   universeSize: number
   durationMs: number
   fromCache?: boolean
-}[]
-  universeSize: number
-  durationMs: number
-  fromCache: boolean
 }
 
 export interface HoldScanResult {
@@ -457,7 +453,6 @@ export async function runHoldScanner(
     asOf: new Date().toISOString(),
     regime,
     signals,
-    exportRows,
     errors: [...errors, ...engErrs],
     universeSize: symbols.length,
     durationMs: Math.round(performance.now() - t0),
