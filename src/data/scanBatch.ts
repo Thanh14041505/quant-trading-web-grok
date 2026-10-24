@@ -7,10 +7,9 @@ import { validateOHLCV } from "@/data/validation/ohlcv"
 import { getApiKey, getBaseUrl, getDataProvider } from "@/data/providers"
 import { getOrFetch } from "@/data/cache"
 
-
 /** Server hard-cap in api/scan.py */
-export const SCAN_CHUNK_SIZE = 5
-export const SCAN_DELAY_SEC = 0.2
+export const SCAN_CHUNK_SIZE = 20
+export const SCAN_DELAY_SEC = 0.05
 
 export interface ScanChunkResult {
   seriesMap: Map<string, OHLCV[]>

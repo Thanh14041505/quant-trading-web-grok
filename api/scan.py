@@ -1,16 +1,11 @@
 """
-POST /api/scan
-Body JSON:
-  {
-    "symbols": ["VCB", "FPT", ...],   # max ~15 per request (Vercel time limit)
-    "start": "2025-01-01",
-    "end": "2026-10-08",
-    "delay": 0.3,
-    "api_key": "optional vnstock key"
-  }
-Header optional: X-VNSTOCK-KEY
+POST /api/scan — sequential OHLCV via VNDirect (fast path).
 
-Runs sequential fetch in ONE process (Streamlit-style) with delay between symbols.
+Body:
+  { "symbols": ["VCB","FPT",...], "start": "...", "end": "...", "delay": 0.05 }
+
+No vnstock fallback by default — that was the timeout source.
+maxDuration should be set high on Vercel for large chunks.
 """
 from http.server import BaseHTTPRequestHandler
 import json
@@ -20,54 +15,19 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(__file__))
-
-# Writable dirs before any vnstock import
 os.environ.setdefault("HOME", "/tmp")
 os.environ.setdefault("XDG_CACHE_HOME", "/tmp/.cache")
-os.environ.setdefault("XDG_CONFIG_HOME", "/tmp/.config")
 os.environ.setdefault("TMPDIR", "/tmp")
-for d in ("/tmp/.cache", "/tmp/.config", "/tmp/vnstock"):
-    try:
-        os.makedirs(d, exist_ok=True)
-    except Exception:
-        pass
 
 from _vndirect_util import (  # noqa: E402
     default_end,
     default_start,
     normalize_symbol,
-    fetch_history as vnd_fetch_history,
+    fetch_history,
 )
 
-def fetch_history(symbol: str, start: str, end: str):
-    """Prefer VNDirect (fast, no guest quota); fallback vnstock if needed."""
-    try:
-        return vnd_fetch_history(symbol, start, end)
-    except Exception as vnd_err:
-        try:
-            from _vnstock_util import fetch_history as vs_fetch
-            return vs_fetch(symbol, start, end)
-        except Exception as vs_err:
-            raise RuntimeError(
-                f"history failed VND={vnd_err}; VS={vs_err}"
-            ) from vs_err
-
-MAX_SYMBOLS = 8
-DEFAULT_DELAY = 0.2
-
-
-def _register_key(api_key: str | None) -> str:
-    if not api_key or not str(api_key).strip():
-        return "none"
-    key = str(api_key).strip()
-    try:
-        from vnstock import register_user
-
-        register_user(key)
-        return "ok"
-    except Exception as e:
-        # Non-fatal — still try public sources
-        return f"error:{type(e).__name__}:{e}"
+MAX_SYMBOLS = 25  # VNDirect is light; stay under ~50s total
+DEFAULT_DELAY = 0.05
 
 
 class handler(BaseHTTPRequestHandler):
@@ -87,13 +47,10 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             symbols_raw = body.get("symbols") or []
-            if not isinstance(symbols_raw, list) or not symbols_raw:
-                self._json(400, {"error": "symbols must be a non-empty array"})
-                return
-
-            # Dedupe + normalize, hard cap
+            if isinstance(symbols_raw, str):
+                symbols_raw = [s.strip() for s in symbols_raw.split(",") if s.strip()]
+            symbols = []
             seen = set()
-            symbols: list[str] = []
             for s in symbols_raw:
                 sym = normalize_symbol(str(s))
                 if sym and sym not in seen:
@@ -101,65 +58,57 @@ class handler(BaseHTTPRequestHandler):
                     symbols.append(sym)
             symbols = symbols[:MAX_SYMBOLS]
 
-            start = str(body.get("start") or default_start(400))
-            end = str(body.get("end") or default_end())
-            delay = float(body.get("delay") if body.get("delay") is not None else DEFAULT_DELAY)
-            delay = max(0.0, min(delay, 3.0))
+            start = str(body.get("start") or default_start(400))[:10]
+            end = str(body.get("end") or default_end())[:10]
+            try:
+                delay = float(body.get("delay", DEFAULT_DELAY))
+            except (TypeError, ValueError):
+                delay = DEFAULT_DELAY
+            delay = max(0.0, min(delay, 1.0))
 
-            api_key = body.get("api_key") or self.headers.get("X-VNSTOCK-KEY")
-            key_status = _register_key(api_key)
+            if not symbols:
+                self._json(400, {"error": "symbols required"})
+                return
 
-            data: dict[str, list] = {}
-            errors: list[dict] = []
+            results = {}
+            errors = []
             t0 = time.time()
-
             for i, sym in enumerate(symbols):
                 try:
-                    rows = fetch_history(sym, start, end)
-                    rows = [r for r in rows if start <= r["date"] <= end]
-                    if rows:
-                        data[sym] = rows
-                    else:
-                        errors.append({"symbol": sym, "error": "empty"})
+                    bars = fetch_history(sym, start, end)
+                    bars = [b for b in bars if start <= b["date"] <= end]
+                    results[sym] = bars
                 except Exception as e:
-                    errors.append({"symbol": sym, "error": str(e)[:240]})
-                if i < len(symbols) - 1 and delay > 0:
+                    errors.append({"symbol": sym, "error": str(e)[:200]})
+                    results[sym] = []
+                if delay and i < len(symbols) - 1:
                     time.sleep(delay)
 
             self._json(
                 200,
                 {
-                    "data": data,
+                    "data": results,
                     "errors": errors,
-                    "meta": {
-                        "requested": len(symbols_raw),
-                        "processed": len(symbols),
-                        "ok": len(data),
-                        "failed": len(errors),
-                        "delay": delay,
-                        "key_status": key_status,
-                        "duration_sec": round(time.time() - t0, 2),
-                        "max_symbols": MAX_SYMBOLS,
-                    },
-                    "source": "vnstock-scan",
+                    "source": "vndirect",
+                    "count": {k: len(v) for k, v in results.items()},
+                    "durationMs": int((time.time() - t0) * 1000),
+                    "symbols": symbols,
                 },
             )
         except Exception as e:
             self._json(
                 500,
-                {"error": str(e), "trace": traceback.format_exc()[-1200:]},
+                {"error": str(e)[:400], "trace": traceback.format_exc()[-800:]},
             )
 
     def do_GET(self):
-        # Simple health for this route
         self._json(
             200,
             {
                 "ok": True,
-                "endpoint": "/api/scan",
-                "method": "POST",
-                "max_symbols": MAX_SYMBOLS,
-                "default_delay": DEFAULT_DELAY,
+                "usage": "POST JSON {symbols, start, end, delay}",
+                "maxSymbols": MAX_SYMBOLS,
+                "source": "vndirect",
             },
         )
 
@@ -172,7 +121,7 @@ class handler(BaseHTTPRequestHandler):
         )
 
     def _json(self, status: int, body: dict):
-        payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        payload = json.dumps(body, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self._cors()
