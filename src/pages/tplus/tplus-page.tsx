@@ -27,6 +27,8 @@ type SortKey =
   | "setup"
   | "action"
   | "riskReward"
+  | "tradabilityScore"
+  | "riskRewardAtHigh"
   | "confidence"
 
 function actionVariant(
@@ -88,13 +90,13 @@ export function TPlusPage() {
     }
   }, [])
 
-  const exportExcel = useCallback(async () => {
+  const exportExcel = useCallback(() => {
     if (!result?.signals?.length) return
     setExporting(true)
-    setExportMsg("Preparing detailed export…")
+    setExportMsg("Exporting…")
     try {
-      await exportTPlusScanToExcel(
-        // export filtered view if filters active, else all
+      // Instant path: rows were built during scan — no re-fetch / recompute
+      exportTPlusScanToExcel(
         result.signals,
         {
           asOf: result.asOf,
@@ -102,15 +104,15 @@ export function TPlusPage() {
           universeSize: result.universeSize,
           durationMs: result.durationMs,
           errors: result.errors,
+          exportRows: result.exportRows,
         },
-        (p) =>
-          setExportMsg(
-            p.message
-              ? `${p.message} (${p.done}/${p.total})`
-              : `${p.done}/${p.total}`
-          )
+        (p) => setExportMsg(p.message ?? "Exporting…")
       )
-      setExportMsg("Downloaded .xls + .csv")
+      setExportMsg(
+        result.exportRows?.length
+          ? "Downloaded .xls (prebuilt at scan)"
+          : "Downloaded .xls (signal sheet — re-scan for full audit columns)"
+      )
     } catch (e) {
       setExportMsg(e instanceof Error ? e.message : "Export failed")
     } finally {
@@ -304,12 +306,14 @@ export function TPlusPage() {
                   <Th label="Setup" k="setup" sortKey={sortKey} onSort={toggleSort} />
                   <Th label="Action" k="action" sortKey={sortKey} onSort={toggleSort} />
                   <Th label="Score" k="score" sortKey={sortKey} onSort={toggleSort} />
+                  <Th label="Tradability" k="tradabilityScore" sortKey={sortKey} onSort={toggleSort} />
                   <th className="px-2 py-2 font-medium">Quality</th>
                   <Th label="Conf" k="confidence" sortKey={sortKey} onSort={toggleSort} />
                   <th className="px-2 py-2 font-medium">Entry</th>
                   <th className="px-2 py-2 font-medium">SL</th>
                   <th className="px-2 py-2 font-medium">TP1</th>
-                  <Th label="R:R" k="riskReward" sortKey={sortKey} onSort={toggleSort} />
+                  <Th label="R mid" k="riskReward" sortKey={sortKey} onSort={toggleSort} />
+                  <Th label="R@high" k="riskRewardAtHigh" sortKey={sortKey} onSort={toggleSort} />
                   <th className="px-2 py-2 font-medium">Regime</th>
                 </tr>
               </thead>
@@ -344,6 +348,7 @@ export function TPlusPage() {
                       </Badge>
                     </td>
                     <td className="px-2 py-1.5 font-medium">{s.score}</td>
+                    <td className="px-3 py-2 tabular-nums font-medium">{s.tradabilityScore ?? s.score}</td>
                     <td className="px-2 py-1.5 text-xs">{s.tradeQuality}</td>
                     <td className="px-2 py-1.5 text-xs">{s.confidence}</td>
                     <td className="px-2 py-1.5 text-xs whitespace-nowrap">
@@ -354,7 +359,8 @@ export function TPlusPage() {
                     <td className="px-2 py-1.5 text-xs">{s.stopLoss ?? "—"}</td>
                     <td className="px-2 py-1.5 text-xs">{s.tp1 ?? "—"}</td>
                     <td className="px-2 py-1.5 text-xs">
-                      {s.riskReward != null ? s.riskReward.toFixed(1) : "—"}
+                      {s.riskReward != null ? s.riskReward.toFixed(2) : "—"}</td>
+                    <td className="px-3 py-2 tabular-nums">{s.riskRewardAtHigh != null ? s.riskRewardAtHigh.toFixed(2) : "—"}
                     </td>
                     <td className="px-2 py-1.5 text-xs">{s.marketRegime}</td>
                   </tr>

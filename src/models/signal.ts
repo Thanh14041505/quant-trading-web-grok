@@ -33,23 +33,40 @@ export interface TradingSignal {
   engine: "TPLUS" | "HOLD"
   setup: TPlusSetup | string
   action: SignalAction
-  /** Opportunity score 0–100 */
+  /** Opportunity / candidate score 0–100 (not the same as tradability) */
   score: number
+  /**
+   * Execution attractiveness 0–100 — combines score, conservative R:R,
+   * setup quality, hard risks, regime penalty. Prefer this for ranking trades.
+   */
+  tradabilityScore?: number
   tradeQuality: TradeQuality
   confidence: ConfidenceLevel
   entryZone?: EntryZone
   trigger?: string
+  triggerPrice?: number | null
   stopLoss?: number
   tp1?: number
   tp2?: number
+  /** R:R at entry midpoint */
   riskReward?: number
+  /** Conservative R:R if filled at entry high */
+  riskRewardAtHigh?: number
+  riskRewardAtLow?: number
+  riskPct?: number
+  rewardPct?: number
+  entryWidthPct?: number
+  atr14?: number
+  referenceClose?: number
   reasons: string[]
   risks: string[]
   marketRegime: MarketRegime | string
-  /** Strategy version for journal / backtest */
   strategyVersion: string
-  /** Component scores for transparency */
   componentScores?: Record<string, number>
+  /** Feature / decision bar date */
+  featureDate?: string
+  /** ISO timestamp when signal was computed client-side */
+  computedAt?: string
 }
 
 export interface TPlusScoreWeights {

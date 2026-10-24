@@ -38,7 +38,13 @@ export interface TPlusScanResult {
   asOf: string
   regime: RegimeResult | null
   signals: TradingSignal[]
+  /** Pre-built audit rows for instant Excel export (no re-fetch) */
+  exportRows?: Record<string, string | number | boolean | null>[]
   errors: { symbol: string; error: string }[]
+  universeSize: number
+  durationMs: number
+  fromCache?: boolean
+}[]
   universeSize: number
   durationMs: number
   fromCache: boolean
@@ -108,7 +114,7 @@ async function loadSeriesMap(
 }> {
   // vnstock on Vercel: batch via POST /api/scan (one process, delay 0.3, chunks)
   if (shouldUseScanApi()) {
-    // Do NOT close over destructured const before assignment (TDZ crash)
+    // Do NOT close over destructured const before assignment (TDZ crash in browser)
     const loaded = await loadSeriesViaScanApi(
       symbols,
       start,
@@ -125,6 +131,7 @@ async function loadSeriesMap(
         })
     )
     const seriesMap = loaded.seriesMap
+    // Drop short series from map for engine quality
     for (const [sym, bars] of [...seriesMap.entries()]) {
       if (bars.length < 30) {
         seriesMap.delete(sym)
@@ -249,7 +256,7 @@ export async function runTPlusScanner(
     message: "Running T+ engine…",
   })
 
-  const { signals, errors: engErrs } = runTPlusScan(seriesMap, {
+  const { signals, exportRows, errors: engErrs } = runTPlusScan(seriesMap, {
     regime,
     indexBars: idx.data,
   })
@@ -259,6 +266,7 @@ export async function runTPlusScanner(
     asOf: new Date().toISOString(),
     regime,
     signals,
+    exportRows,
     errors: [...errors, ...engErrs],
     universeSize: symbols.length,
     durationMs: Math.round(performance.now() - t0),
@@ -449,6 +457,7 @@ export async function runHoldScanner(
     asOf: new Date().toISOString(),
     regime,
     signals,
+    exportRows,
     errors: [...errors, ...engErrs],
     universeSize: symbols.length,
     durationMs: Math.round(performance.now() - t0),

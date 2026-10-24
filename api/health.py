@@ -8,8 +8,7 @@ class handler(BaseHTTPRequestHandler):
         body = {
             "ok": True,
             "service": "vn-quant-api",
-            "primary_provider": "vndirect-finfo",
-            "fallback_provider": "vnstock",
+            "provider": "vnstock",
             "vnstock_key_configured": bool(os.getenv("VNSTOCK_API_KEY")),
             "endpoints": [
                 "/api/health",
@@ -21,8 +20,8 @@ class handler(BaseHTTPRequestHandler):
                 "/api/sectors",
             ],
             "note": (
-                "OHLCV/company prefer VNDirect finfo-api (no guest rate limit). "
-                "Fundamentals: VNDirect first, optional vnstock enrich."
+                "VNDirect disabled on Vercel (finfo-api timeout from US regions). "
+                "All market data via vnstock. Set VNSTOCK_API_KEY for 60 req/min."
             ),
         }
         self._json(200, body)

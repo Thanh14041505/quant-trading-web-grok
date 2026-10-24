@@ -8,8 +8,8 @@ import { getApiKey, getBaseUrl, getDataProvider } from "@/data/providers"
 import { getOrFetch } from "@/data/cache"
 
 /** Server hard-cap in api/scan.py */
-export const SCAN_CHUNK_SIZE = 20
-export const SCAN_DELAY_SEC = 0.05
+export const SCAN_CHUNK_SIZE = 8
+export const SCAN_DELAY_SEC = 0.3
 
 export interface ScanChunkResult {
   seriesMap: Map<string, OHLCV[]>
