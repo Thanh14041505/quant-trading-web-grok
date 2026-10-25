@@ -102,7 +102,7 @@ export function HoldPage() {
           durationMs: result.durationMs,
           errors: result.errors,
         },
-        (prog) =>
+        (prog: { done: number; total: number; message?: string }) =>
           setExportMsg(
             prog.message
               ? `${prog.message} (${prog.done}/${prog.total})`

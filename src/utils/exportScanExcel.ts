@@ -4,6 +4,7 @@
  * SpreadsheetML (.xls) — opens in Excel, no xlsx dependency (saves bundle + CPU).
  */
 import type { TradingSignal } from "@/models/signal"
+import type { HoldSignal } from "@/models/hold"
 import type { RegimeResult } from "@/quant/regime"
 
 type Primitive = string | number | boolean | null | undefined
@@ -199,4 +200,94 @@ export async function exportTPlusScanToExcelAsync(
   onProgress?: (p: { done: number; total: number; message?: string }) => void
 ): Promise<void> {
   exportTPlusScanToExcel(signals, meta, onProgress)
+}
+
+
+export interface HoldExportMeta {
+  asOf?: string
+  regime?: RegimeResult | null
+  universeSize?: number
+  durationMs?: number
+  errors?: { symbol: string; error: string }[]
+}
+
+function holdSignalsToRows(signals: HoldSignal[]): Row[] {
+  return signals.map((s) => ({
+    symbol: s.symbol,
+    date: s.date,
+    engine: s.engine,
+    setup: s.setup,
+    action: s.action,
+    score: s.score,
+    tradeQuality: s.tradeQuality,
+    confidence: s.confidence,
+    sector: s.sector,
+    marketRegime: String(s.marketRegime ?? ""),
+    strategyVersion: s.strategyVersion ?? "",
+    reasons: (s.reasons ?? []).join(" | "),
+    risks: (s.risks ?? []).join(" | "),
+    roe: s.metrics?.roe ?? null,
+    roa: s.metrics?.roa ?? null,
+    pe: s.metrics?.pe ?? null,
+    pb: s.metrics?.pb ?? null,
+    epsGrowth: s.metrics?.epsGrowth ?? null,
+    revenueGrowth: s.metrics?.revenueGrowth ?? null,
+    debtToEquity: s.metrics?.debtToEquity ?? null,
+    ...(s.componentScores
+      ? Object.fromEntries(
+          Object.entries(s.componentScores).map(([k, v]) => [`comp.${k}`, v])
+        )
+      : {}),
+  }))
+}
+
+/**
+ * Hold scan Excel export (signal-level, no second network hop).
+ */
+export function exportHoldScanToExcel(
+  signals: HoldSignal[],
+  meta: HoldExportMeta = {},
+  onProgress?: (p: { done: number; total: number; message?: string }) => void
+): void {
+  onProgress?.({ done: 0, total: 1, message: "Building Hold workbook…" })
+  const rows = holdSignalsToRows(signals)
+  const actionable = rows.filter((r) => {
+    const a = String(r.action ?? "")
+    return a === "BUY" || a === "WATCH" || a === "HOLD"
+  })
+  const summary: Row[] = [
+    {
+      asOf: meta.asOf ?? "",
+      regime: meta.regime?.regime ?? "",
+      universeSize: meta.universeSize ?? signals.length,
+      scanDurationMs: meta.durationMs ?? null,
+      totalSignals: signals.length,
+      actionableCount: actionable.length,
+      exportMode: "HOLD_SIGNAL",
+    },
+  ]
+  const errorRows = (meta.errors ?? []).map((e) => ({
+    symbol: e.symbol,
+    error: e.error,
+  }))
+  const xml = buildWorkbookXml([
+    { name: "Summary", rows: summary },
+    {
+      name: "Top_Actionable",
+      rows: actionable.length ? actionable : [{ note: "No BUY/WATCH/HOLD" }],
+    },
+    { name: "All_Hold", rows: rows },
+    ...(errorRows.length ? [{ name: "Errors", rows: errorRows }] : []),
+  ])
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
+  downloadBlob(`hold_scan_${stamp}.xls`, xml, "application/vnd.ms-excel")
+  onProgress?.({ done: 1, total: 1, message: "Downloaded" })
+}
+
+export async function exportHoldScanToExcelAsync(
+  signals: HoldSignal[],
+  meta: HoldExportMeta = {},
+  onProgress?: (p: { done: number; total: number; message?: string }) => void
+): Promise<void> {
+  exportHoldScanToExcel(signals, meta, onProgress)
 }

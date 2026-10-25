@@ -300,7 +300,6 @@ export function decideAction(
 
   // Conservative geometry for eligibility
   const rrCons = Math.min(riskPlan.riskReward, riskPlan.riskRewardAtHigh)
-  const rr = riskPlan.riskReward
 
   let tradeQuality: TradeQuality = "LOW"
   if (rrCons >= 2.2 && setup.quality >= 65) tradeQuality = "HIGH"
